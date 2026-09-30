@@ -1,0 +1,1229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>考研小助手</title>
+
+<!-- ===================== PWA / 添加到桌面 相关 ===================== -->
+<meta name="theme-color" content="#111111">
+<meta name="description" content="极简考研倒计时 / 今日任务 / 学习计时 / 早晚提醒，数据只存在本机。">
+<!-- iOS 用（安卓会忽略，无害） -->
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="考研">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<!-- 网页图标（内联 SVG，避免额外请求） -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23111'/%3E%3Ctext x='32' y='45' font-size='38' text-anchor='middle' fill='%23fff' font-family='sans-serif'%3E%E7%A0%94%3C/text%3E%3C/svg%3E">
+<link rel="manifest" href="manifest.json">
+
+<style>
+/* ============================================================
+   1. 全局：白底黑字、无横向滚动、大手指热区
+   ============================================================ */
+:root{
+  --bg:#f5f5f5;          /* 页面底色（卡片是白的，略灰底更有层次） */
+  --card:#ffffff;
+  --fg:#111111;          /* 主文字 */
+  --fg-2:#666666;        /* 次要文字 */
+  --fg-3:#999999;        /* 更弱文字 */
+  --line:#e6e6e6;        /* 分割线 */
+  --radius:16px;
+  --safe-t:env(safe-area-inset-top,0px);
+  --safe-b:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{
+  background:var(--bg);
+  color:var(--fg);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  font-size:16px;
+  line-height:1.5;
+  overflow-x:hidden;                 /* 窄屏绝不横向滚动 */
+  padding:calc(10px + var(--safe-t)) 12px calc(24px + var(--safe-b));
+  -webkit-user-select:none;user-select:none;
+}
+input,textarea{-webkit-user-select:text;user-select:text}
+.wrap{max-width:560px;margin:0 auto}
+
+/* ============================================================
+   2. 卡片 / 通用元件
+   ============================================================ */
+.card{
+  background:var(--card);
+  border-radius:var(--radius);
+  padding:16px;
+  margin-bottom:12px;
+  box-shadow:0 1px 2px rgba(0,0,0,.04);
+}
+.card h2{
+  margin:0 0 12px;
+  font-size:15px;
+  font-weight:600;
+  color:var(--fg-2);
+  letter-spacing:.5px;
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+}
+.muted{color:var(--fg-3);font-size:12px;line-height:1.6}
+.hidden{display:none !important}
+.row{display:flex;gap:8px;align-items:center}
+.row > *{min-width:0}
+
+/* 按钮：大、黑、好按 */
+button{
+  font-family:inherit;font-size:16px;
+  border:none;border-radius:12px;
+  padding:12px 16px;
+  background:var(--fg);color:#fff;
+  cursor:pointer;
+  min-height:46px;
+  transition:none;                    /* 不做花哨动画 */
+}
+button:active{opacity:.7}
+button:disabled{background:#ccc;color:#fff}
+button.ghost{background:#f0f0f0;color:var(--fg)}
+button.danger{background:#f0f0f0;color:#c0392b}
+button.small{font-size:14px;padding:9px 12px;min-height:38px;border-radius:10px}
+button.grow{flex:1 1 0}
+
+/* 输入框 */
+input[type="text"]{
+  flex:1 1 auto;
+  font-family:inherit;font-size:16px;   /* 16px 可避免部分浏览器聚焦时自动放大 */
+  padding:12px;
+  border:1px solid var(--line);
+  border-radius:12px;
+  background:#fafafa;color:var(--fg);
+  min-height:46px;min-width:0;
+  outline:none;
+}
+input[type="text"]:focus{border-color:var(--fg);background:#fff}
+input[type="file"]{display:none}
+
+/* ============================================================
+   3. 顶部倒计时（页面最醒目的部分）
+   ============================================================ */
+.hero{
+  background:var(--fg);
+  color:#fff;
+  border-radius:var(--radius);
+  padding:22px 16px;
+  margin-bottom:12px;
+  text-align:center;
+}
+.hero .title{
+  font-size:13px;letter-spacing:2px;color:#bbb;margin-bottom:8px;
+}
+.hero .line{
+  font-size:20px;color:#ddd;margin-bottom:2px;
+}
+/* 大数字：用 clamp 适配窄屏，绝不撑破 */
+.hero .big{
+  font-size:clamp(38px,17vw,72px);
+  font-weight:800;line-height:1.05;letter-spacing:-1px;
+  font-variant-numeric:tabular-nums;
+  margin:4px 0 6px;
+  word-break:break-all;
+}
+.hero .sub{font-size:14px;color:#bbb;line-height:1.7}
+.hero .sub b{color:#fff;font-weight:600}
+
+/* ============================================================
+   4. 每日一句 / 状态小条
+   ============================================================ */
+.quote{
+  text-align:center;color:var(--fg-3);font-size:12px;
+  margin:-4px 0 12px;line-height:1.6;padding:0 8px;
+}
+
+/* ============================================================
+   5. 今日任务
+   ============================================================ */
+.task-list{list-style:none;margin:0;padding:0}
+.task{
+  display:flex;align-items:flex-start;gap:10px;
+  padding:10px 0;border-bottom:1px solid var(--line);
+}
+.task:last-child{border-bottom:none}
+.task .txt{
+  flex:1 1 auto;min-width:0;
+  word-break:break-word;overflow-wrap:anywhere;
+  align-self:center;
+}
+.task.done .txt{text-decoration:line-through;color:var(--fg-3)}
+/* 勾选圈：用原生 checkbox 放大，安卓 Chrome 表现稳定 */
+.task input[type="checkbox"]{
+  flex:0 0 auto;
+  width:24px;height:24px;margin:0;
+  accent-color:#111;              /* 勾选后是黑色 */
+  align-self:center;
+}
+.task .del{
+  flex:0 0 auto;
+  background:transparent;color:var(--fg-3);
+  font-size:20px;line-height:1;
+  padding:6px 8px;min-height:34px;border-radius:8px;
+}
+.task .del:active{background:#f0f0f0}
+.empty{color:var(--fg-3);font-size:14px;text-align:center;padding:16px 0}
+.warn{color:#c0392b;font-size:12px;margin-top:8px;text-align:center}
+
+/* ============================================================
+   6. 学习计时
+   ============================================================ */
+.timer-clock{
+  text-align:center;
+  font-size:clamp(40px,16vw,64px);
+  font-weight:800;line-height:1.1;letter-spacing:-1px;
+  font-variant-numeric:tabular-nums;
+  margin:6px 0 14px;
+  word-break:break-all;
+}
+.timer-btns{display:flex;gap:8px}
+.total{
+  display:flex;justify-content:space-between;align-items:baseline;
+  margin-top:14px;padding-top:14px;border-top:1px solid var(--line);
+  font-size:14px;color:var(--fg-2);
+}
+.total b{font-size:22px;color:var(--fg);font-variant-numeric:tabular-nums}
+
+/* ============================================================
+   7. 设置区（导出/导入/提醒）
+   ============================================================ */
+.stack{display:flex;flex-direction:column;gap:8px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+
+/* ============================================================
+   8. 弹窗（提醒 / 确认）
+   ============================================================ */
+.mask{
+  position:fixed;inset:0;background:rgba(0,0,0,.5);
+  display:flex;align-items:center;justify-content:center;
+  padding:20px;z-index:50;
+}
+.modal{
+  background:#fff;border-radius:18px;
+  width:100%;max-width:340px;padding:22px 18px 16px;
+  text-align:center;
+}
+.modal .emoji{font-size:44px;line-height:1;margin-bottom:8px}
+.modal h3{margin:0 0 8px;font-size:22px}
+.modal p{margin:0 0 18px;font-size:14px;color:var(--fg-2)}
+.modal .btns{display:flex;gap:8px}
+
+/* ============================================================
+   9. 轻提示 Toast
+   ============================================================ */
+#toast{
+  position:fixed;left:50%;bottom:calc(24px + var(--safe-b));
+  transform:translateX(-50%);
+  background:rgba(17,17,17,.92);color:#fff;
+  font-size:14px;padding:10px 16px;border-radius:999px;
+  max-width:86vw;text-align:center;z-index:60;
+  opacity:0;pointer-events:none;
+}
+#toast.show{opacity:1}
+
+/* ============================================================
+   10. 底部信息
+   ============================================================ */
+footer{
+  text-align:center;color:var(--fg-3);font-size:11px;
+  padding:8px 0 0;line-height:1.8;
+}
+
+/* 极窄屏（<340px）微调，保证不换行错乱 */
+@media (max-width:340px){
+  body{padding-left:8px;padding-right:8px}
+  .card{padding:12px}
+  button{padding:10px 12px;font-size:15px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ========== 1. 倒计时（顶部最醒目） ========== -->
+  <section class="hero" id="hero">
+    <div class="title">考 研 倒 计 时</div>
+    <div class="line" id="cdPrefix">距离考试还有</div>
+    <div class="big" id="cdBig">--</div>
+    <div class="sub" id="cdSub">正在计算…</div>
+  </section>
+  <div class="quote" id="quote"></div>
+
+  <!-- ========== 2. 今日任务 ========== -->
+  <section class="card">
+    <h2>
+      <span>今日任务</span>
+      <span class="muted" id="taskCount">0 / 5</span>
+    </h2>
+    <div class="row">
+      <input type="text" id="taskInput" placeholder="添加今天要完成的事…" maxlength="80"
+             enterkeyhint="done" autocomplete="off">
+      <button type="button" id="taskAdd" style="flex:0 0 auto">添加</button>
+    </div>
+    <div class="warn hidden" id="taskWarn">任务有点多啦，建议每天 3–5 件，专注完成比堆数量更重要。</div>
+    <ul class="task-list" id="taskList"></ul>
+    <div class="empty hidden" id="taskEmpty">今天还没有任务，先写下 3 件最重要的事。</div>
+  </section>
+
+  <!-- ========== 3. 学习计时 ========== -->
+  <section class="card">
+    <h2><span>学习计时</span><span class="muted" id="timerState">未开始</span></h2>
+    <div class="timer-clock" id="timerClock">00:00:00</div>
+    <div class="timer-btns">
+      <button type="button" class="grow" id="btnStart">开始</button>
+      <button type="button" class="grow ghost" id="btnPause" disabled>暂停</button>
+      <button type="button" class="grow danger" id="btnStop" disabled>结束</button>
+    </div>
+    <div class="total">
+      <span>今日学习总时长</span>
+      <b id="todayTotal">00:00</b>
+    </div>
+  </section>
+
+  <!-- ========== 4. 早晚提醒 ========== -->
+  <section class="card">
+    <h2><span>早晚提醒</span></h2>
+    <p class="muted" style="margin:0 0 12px">
+      网页无法像原生 App 那样在后台稳定弹通知。这里提供两种方式：<br>
+      ① 页面打开时自动检查：<b>00:30–06:00</b> 提醒睡觉，<b>08:00–12:00</b> 提醒起床；<br>
+      ② 把闹钟加入手机日历（推荐，最可靠）。
+    </p>
+    <div class="grid2">
+      <button type="button" class="ghost small" id="btnIcsSleep">添加睡觉闹钟 00:30</button>
+      <button type="button" class="ghost small" id="btnIcsWake">添加起床闹钟 08:00</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button type="button" class="ghost small grow" id="btnNotify">开启浏览器通知权限</button>
+      <button type="button" class="ghost small" id="btnTestNotify" style="flex:0 0 auto">测试</button>
+    </div>
+    <p class="muted" style="margin:10px 0 0" id="notifyState">通知权限：查询中…</p>
+  </section>
+
+  <!-- ========== 5. 数据导出 / 导入 ========== -->
+  <section class="card">
+    <h2><span>数据</span><span class="muted">只存本机，不上传</span></h2>
+    <div class="stack">
+      <button type="button" id="btnExport">导出全部数据（JSON）</button>
+      <button type="button" class="ghost" id="btnImport">导入数据（覆盖恢复）</button>
+      <input type="file" id="fileInput" accept="application/json,.json">
+      <button type="button" class="ghost small" id="btnExportIcsAll">把两个闹钟一起加入日历</button>
+    </div>
+    <p class="muted" style="margin:10px 0 0" id="storageInfo">本地数据：—</p>
+  </section>
+
+  <footer>
+    考研小助手 · 纯本地运行 · 无登录 / 无广告 / 无统计<br>
+    部署到 HTTPS 后可「添加到主屏幕」，离线也能打开
+  </footer>
+</div>
+
+<!-- 弹窗与提示容器 -->
+<div id="modalHost"></div>
+<div id="toast"></div>
+
+<script>
+/* ==================================================================
+ * 考研小助手 —— 纯原生 JS，无任何第三方库
+ * 目录：
+ *   A. 常量与工具函数
+ *   B. 本地存储层（localStorage 读写 + 迁移）
+ *   C. 倒计时（北京时间 UTC+8，绝对时间戳，与设备时区无关）
+ *   D. 今日任务
+ *   E. 学习计时
+ *   F. 早晚提醒 + .ics 日历文件 + Notification
+ *   G. 数据导出 / 导入
+ *   H. 弹窗 / Toast / 启动 / Service Worker 注册
+ * ================================================================== */
+(function () {
+  'use strict';
+
+  /* ============================ A. 常量与工具 ============================ */
+
+  var STORAGE_KEY = 'kaoyan_assistant_v1';   // localStorage 主键
+  var MAX_RECOMMEND_TASKS = 5;               // 建议任务数上限（仅提示，不强制）
+  var SESSION_LOG_KEEP = 100;                // 计时记录最多保留条数
+
+  /* 目标时间：北京时间 2026-12-26 00:00:00（UTC+8）= UTC 2026-12-25T16:00:00Z
+     用绝对时间戳比较，所以设备时区/时区设置错了也不会算错。 */
+  var EXAM_START = Date.parse('2026-12-25T16:00:00Z');
+  /* 初试一般考两天，第 2 天 17:00 结束 = 北京 2026-12-27 17:00 = UTC 09:00 */
+  var EXAM_END = Date.parse('2026-12-27T09:00:00Z');
+
+  /* 提醒时间窗口（按设备本地时间判断，见 F 节说明） */
+  var SLEEP_START = 30;        // 00:30
+  var SLEEP_END = 6 * 60;      // 06:00（左闭右开）
+  var WAKE_START = 8 * 60;     // 08:00
+  var WAKE_END = 12 * 60;      // 12:00（左闭右开）
+  var SLEEP_LABEL = '00:30';
+  var WAKE_LABEL = '08:00';
+
+  var MS_DAY = 86400000;
+
+  function $(id) { return document.getElementById(id); }
+  function pad2(n) { n = Math.floor(n); return (n < 10 ? '0' : '') + n; }
+
+  /** 把秒格式化为 HH:MM:SS（超过 99 小时继续累加，不截断） */
+  function fmtHMS(totalSec) {
+    totalSec = Math.max(0, Math.floor(totalSec || 0));
+    var h = Math.floor(totalSec / 3600);
+    var m = Math.floor((totalSec % 3600) / 60);
+    var s = totalSec % 60;
+    return pad2(h) + ':' + pad2(m) + ':' + pad2(s);
+  }
+
+  /** 把秒格式化为 HH:MM（总时长显示用） */
+  function fmtHM(totalSec) {
+    totalSec = Math.max(0, Math.floor(totalSec || 0));
+    var h = Math.floor(totalSec / 3600);
+    var m = Math.floor((totalSec % 3600) / 60);
+    return pad2(h) + ':' + pad2(m);
+  }
+
+  /** 本地日期字符串 YYYY-MM-DD（用于按天分组、文件名） */
+  function dateKey(d) {
+    d = d || new Date();
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+  }
+
+  /** 生成唯一 id（不用第三方库） */
+  var idSeed = 0;
+  function uid() {
+    idSeed += 1;
+    return Date.now().toString(36) + '-' + idSeed.toString(36) + '-' + Math.random().toString(36).slice(2, 7);
+  }
+
+  /** 纯文本写入 DOM，天然防 XSS（绝不用 innerHTML 插入用户输入） */
+  function el(tag, className, text) {
+    var node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text != null) node.textContent = text;
+    return node;
+  }
+
+  /* ============================ B. 本地存储层 ============================ */
+
+  /** 默认数据结构（导出/导入的 JSON 就是它的完整快照） */
+  function defaultData() {
+    return {
+      version: 1,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      /* 任务：{ "2026-03-05": [ {id,text,done,createdAt} ] } —— 按日期保存，历史不丢 */
+      tasks: {},
+      /* 每日学习总时长：{ "2026-03-05": 3725 } 单位秒 */
+      totals: {},
+      /* 计时器状态：刷新后可恢复 */
+      timer: { running: false, baseSeconds: 0, startAt: 0 },
+      /* 提醒记录：{ "2026-03-05": { sleep:true, wake:true } } 每天各提醒一次 */
+      reminders: {},
+      /* 每次计时的明细记录（可选，用于导出查看） */
+      sessions: []
+    };
+  }
+
+  var data = defaultData();
+
+  function loadData() {
+    var fresh = defaultData();
+    var raw = null;
+    try { raw = localStorage.getItem(STORAGE_KEY); } catch (e) { raw = null; }
+    if (!raw) { data = fresh; return; }
+    try {
+      var parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') throw new Error('bad json');
+      /* 逐字段合并，兼容旧版本数据 / 手工改坏的 JSON */
+      data = {
+        version: parsed.version || 1,
+        createdAt: parsed.createdAt || fresh.createdAt,
+        updatedAt: parsed.updatedAt || 0,
+        tasks: (parsed.tasks && typeof parsed.tasks === 'object') ? parsed.tasks : {},
+        totals: (parsed.totals && typeof parsed.totals === 'object') ? parsed.totals : {},
+        timer: (parsed.timer && typeof parsed.timer === 'object')
+          ? {
+              running: !!parsed.timer.running,
+              baseSeconds: Number(parsed.timer.baseSeconds) || 0,
+              startAt: Number(parsed.timer.startAt) || 0
+            }
+          : fresh.timer,
+        reminders: (parsed.reminders && typeof parsed.reminders === 'object') ? parsed.reminders : {},
+        sessions: Array.isArray(parsed.sessions) ? parsed.sessions : []
+      };
+    } catch (e) {
+      /* 数据坏了也不能白屏：保留原始串备份，重置为默认 */
+      try { localStorage.setItem(STORAGE_KEY + '_broken_' + Date.now(), raw); } catch (e2) {}
+      data = fresh;
+    }
+  }
+
+  function saveData() {
+    data.updatedAt = Date.now();
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch (e) {
+      /* 隐私模式 / 空间不足：不能让程序崩，只提示 */
+      toast('本地保存失败：' + (e && e.name ? e.name : '未知错误'));
+    }
+  }
+
+  function getTasks(key) {
+    if (!Array.isArray(data.tasks[key])) data.tasks[key] = [];
+    return data.tasks[key];
+  }
+  function getTotal(key) {
+    var v = Number(data.totals[key]);
+    return isFinite(v) && v > 0 ? v : 0;
+  }
+  function addTotal(key, seconds) {
+    data.totals[key] = getTotal(key) + Math.max(0, Math.floor(seconds));
+  }
+
+  /* ============================ C. 倒计时 ============================ */
+
+  function renderCountdown() {
+    var now = Date.now();
+    var pfx = $('cdPrefix'), big = $('cdBig'), sub = $('cdSub');
+
+    if (now < EXAM_START) {
+      /* 剩余毫秒 → 天/时/分/秒 */
+      var left = EXAM_START - now;
+      var days = Math.floor(left / MS_DAY);
+      var hours = Math.floor((left % MS_DAY) / 3600000);
+      var mins = Math.floor((left % 3600000) / 60000);
+      var secs = Math.floor((left % 60000) / 1000);
+
+      pfx.textContent = '距离考试还有';
+      big.textContent = days + ' 天';
+      sub.textContent = '精确剩余 ' + pad2(hours) + ' 时 ' + pad2(mins) + ' 分 ' + pad2(secs) + ' 秒'
+        + ' · 开考 2026-12-26 00:00（北京时间）';
+    } else if (now <= EXAM_END) {
+      pfx.textContent = '考研初试进行中';
+      big.textContent = '考试已开始';
+      sub.textContent = '稳住心态，正常发挥就好 · 预计 12-27 17:00 全部结束';
+    } else {
+      pfx.textContent = '本年度考研初试';
+      big.textContent = '考试已结束';
+      sub.textContent = '辛苦了，好好休息 · 目标时间：2026-12-26 00:00（北京时间）';
+    }
+
+    /* 顶部深色卡片同时显示今天日期，避免用户对不上天 */
+    var d = new Date();
+    var week = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][d.getDay()];
+    sub.textContent += '　|　今天 ' + dateKey(d) + ' ' + week;
+  }
+
+  /* 每天早上自动刷新的保险：跨天时重绘任务区（倒计时本来就每秒更新） */
+  var lastSeenDay = dateKey();
+
+  function checkDayRollover() {
+    var today = dateKey();
+    if (today !== lastSeenDay) {
+      lastSeenDay = today;
+      renderTasks();     // 新的一天 = 新的任务清单
+      renderTimer();     // 今日总时长归零显示
+      renderStorageInfo();
+      toast('新的一天：' + today + '，任务清单已切换');
+    }
+  }
+
+  /* ============================ D. 今日任务 ============================ */
+
+  /** 只更新「今日任务」卡片的计数与超额提示（勾选时用它，避免整表重绘） */
+  function updateTaskMeta() {
+    var list = getTasks(dateKey());
+    var doneCount = list.filter(function (t) { return t.done; }).length;
+    $('taskCount').textContent = doneCount + ' / ' + list.length;
+    $('taskEmpty').classList.toggle('hidden', list.length > 0);
+    /* 超过建议数量：只提示，不阻止添加 */
+    $('taskWarn').classList.toggle('hidden', list.length <= MAX_RECOMMEND_TASKS);
+  }
+
+  function renderTasks() {
+    var key = dateKey();
+    var list = getTasks(key);
+    var ul = $('taskList');
+    ul.textContent = '';               // 清空（不用 innerHTML）
+
+    list.forEach(function (task) {
+      var li = el('li', 'task' + (task.done ? ' done' : ''));
+
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = !!task.done;
+      cb.setAttribute('aria-label', '完成任务');
+      cb.addEventListener('change', function () {
+        task.done = cb.checked;
+        li.classList.toggle('done', cb.checked);
+        updateTaskMeta();              // 勾选后立刻刷新「已完成 / 总数」
+        saveData();
+      });
+
+      var txt = el('span', 'txt', task.text);
+
+      var del = el('button', 'del', '✕');
+      del.type = 'button';
+      del.setAttribute('aria-label', '删除任务');
+      del.addEventListener('click', function () {
+        var i = list.indexOf(task);
+        if (i >= 0) list.splice(i, 1);
+        saveData();
+        renderTasks();
+      });
+
+      li.appendChild(cb);
+      li.appendChild(txt);
+      li.appendChild(del);
+      ul.appendChild(li);
+    });
+
+    updateTaskMeta();
+  }
+
+  function addTask() {
+    var input = $('taskInput');
+    var text = (input.value || '').replace(/\s+/g, ' ').trim();
+    if (!text) { input.focus(); return; }
+    if (text.length > 80) text = text.slice(0, 80);
+
+    var list = getTasks(dateKey());
+    list.push({ id: uid(), text: text, done: false, createdAt: Date.now() });
+    input.value = '';
+    saveData();
+    renderTasks();
+    input.focus();
+
+    if (list.length > MAX_RECOMMEND_TASKS) {
+      toast('已添加。任务超过 ' + MAX_RECOMMEND_TASKS + ' 个了，注意取舍');
+    }
+  }
+
+  /* ============================ E. 学习计时 ============================ */
+
+  /* 计时状态模型（简单且不会重复计时）：
+   *   data.timer = { running, baseSeconds, startAt }
+   *     - running=false：本次已用 = baseSeconds
+   *     - running=true ：本次已用 = baseSeconds + (Date.now() - startAt)/1000
+   *   用时间戳推导，而不是靠 setInterval 累加：标签页被系统冻结、手机锁屏、
+   *   切到后台，回来时数字都是对的。只有「暂停 / 结束 / 冻结」才会把 running 置 false。 */
+  var ticker = null;              // 显示刷新用的 setInterval 句柄
+  var sessionBase = 0;            // 本次计时已累计的秒数（运行中即为基准值）
+  var sessionEnd = 0;             // 运行中记录「当前运行段」的结束时刻，仅页面冻结时用
+
+  /** 本次计时已经进行了多少秒 */
+  function currentElapsed() {
+    if (data.timer.running && data.timer.startAt) {
+      return data.timer.baseSeconds + (Date.now() - data.timer.startAt) / 1000;
+    }
+    return data.timer.baseSeconds;
+  }
+
+  /** 把「当前这一秒」的状态写进 localStorage：刷新页面后总时长不丢 */
+  function saveTimerState() {
+    data.timer.baseSeconds = Math.floor(currentElapsed());
+    data.timer.startAt = Date.now();
+    saveData();
+  }
+
+  function renderTimer() {
+    var running = data.timer.running;
+    var used = currentElapsed() > 0.5;
+
+    $('timerClock').textContent = fmtHMS(currentElapsed());
+    $('todayTotal').textContent = fmtHM(getTotal(dateKey()));
+    $('timerState').textContent = running ? '计时中…' : (used ? '已暂停' : '未开始');
+    $('btnStart').disabled = running;
+    $('btnPause').disabled = !running;
+    $('btnStop').disabled = !used && !running;
+    $('btnStart').textContent = used && !running ? '继续' : '开始';
+  }
+
+  function startTimer() {
+    if (data.timer.running) return;
+    /* 先把「当前这一秒」存好，再开始跑，这样刷新最多只丢 1 秒 */
+    saveTimerState();
+    data.timer.running = true;
+    data.timer.startAt = Date.now();
+    sessionBase = data.timer.baseSeconds;
+    if (ticker) clearInterval(ticker);
+    ticker = setInterval(function () {
+      saveTimerState();      // 每秒落盘：刷新 / 锁屏 / 被杀进程都不丢时长
+      renderTimer();
+    }, 1000);
+    saveData();
+    renderTimer();
+  }
+
+  function pauseTimer(silent) {
+    if (!data.timer.running) return;
+    data.timer.baseSeconds = Math.floor(currentElapsed());
+    data.timer.running = false;
+    data.timer.startAt = 0;
+    if (ticker) { clearInterval(ticker); ticker = null; }
+    saveData();
+    renderTimer();
+    if (!silent) toast('已暂停，当前 ' + fmtHMS(data.timer.baseSeconds));
+  }
+
+  function stopTimer() {
+    var elapsed = Math.floor(currentElapsed());
+
+    if (data.timer.running) {
+      data.timer.baseSeconds = elapsed;
+      data.timer.running = false;
+      data.timer.startAt = 0;
+    }
+    if (ticker) { clearInterval(ticker); ticker = null; }
+
+    if (elapsed >= 1) {
+      var key = dateKey();
+      addTotal(key, elapsed);              // 累加到「今日学习总时长」
+      data.sessions.push({ date: key, seconds: elapsed, at: Date.now() });
+      if (data.sessions.length > SESSION_LOG_KEEP) {
+        data.sessions = data.sessions.slice(-SESSION_LOG_KEEP);
+      }
+      toast('本次学习 ' + fmtHMS(elapsed) + '，已计入今日总时长');
+    } else {
+      toast('时长太短，未计入');
+    }
+
+    /* 归零，等待下一次计时 */
+    data.timer.baseSeconds = 0;
+    data.timer.running = false;
+    data.timer.startAt = 0;
+    saveData();
+    renderTimer();
+    renderStorageInfo();
+  }
+
+  /**
+   * 页面被隐藏 / 被系统冻结时调用：
+   * 立刻把时长落盘并把状态记为「已暂停」，回来时不会因为时间流逝而凭空计时。
+   */
+  function freezeTimer() {
+    if (!data.timer.running) { saveData(); return; }
+    data.timer.baseSeconds = Math.floor(currentElapsed());
+    data.timer.running = false;
+    data.timer.startAt = 0;
+    data.timer.frozenAt = Date.now();
+    saveData();
+    renderTimer();
+  }
+
+  /** 页面重新可见时校正显示（后台标签页会被浏览器节流，这里只做显示同步） */
+  function onVisible() {
+    if (document.visibilityState !== 'visible') return;
+    checkDayRollover();
+    renderTimer();
+    renderCountdown();
+    checkReminder(false);
+  }
+
+  /* ============================ F. 早晚提醒 ============================ */
+
+  function minutesNow() {
+    var d = new Date();
+    return d.getHours() * 60 + d.getMinutes();
+  }
+
+  function reminderFlag(key, type) {
+    var day = data.reminders[key];
+    return !!(day && day[type]);
+  }
+
+  function markReminder(key, type) {
+    if (!data.reminders[key]) data.reminders[key] = {};
+    data.reminders[key][type] = true;
+    saveData();
+  }
+
+  /** 判断此刻是否处于某个提醒窗口 */
+  function inSleepWindow() {
+    var m = minutesNow();
+    return m >= SLEEP_START && m < SLEEP_END;
+  }
+  function inWakeWindow() {
+    var m = minutesNow();
+    return m >= WAKE_START && m < WAKE_END;
+  }
+
+  /**
+   * a) 页面打开（或回到前台）时检查时间：
+   *    - 00:30–06:00 且当天没提醒过 → 弹「该睡觉了」
+   *    - 08:00–12:00 且当天没提醒过 → 弹「该起床了」
+   *    force=true 时忽略「今天已提醒」，用于「测试/再提醒一次」。
+   */
+  function checkReminder(force) {
+    var key = dateKey();
+
+    if (inSleepWindow() && (force || !reminderFlag(key, 'sleep'))) {
+      markReminder(key, 'sleep');
+      showReminderModal('sleep', '该睡觉了', '已经 00:30 之后了。现在睡，明天才有精神背单词。', '晚安，睡了');
+      sendNotification('该睡觉了 🌙', '已经过了 00:30，放下手机去睡觉吧。');
+      return;
+    }
+    if (inWakeWindow() && (force || !reminderFlag(key, 'wake'))) {
+      markReminder(key, 'wake');
+      showReminderModal('wake', '该起床了', '早上好，08:00 到了。起床 → 洗漱 → 开始今天的任务。', '好的，起了');
+      sendNotification('该起床了 ☀️', '早上 08:00 了，起床开始今天的复习吧。');
+      return;
+    }
+    if (force) {
+      var tips = [];
+      if (!inSleepWindow()) tips.push('现在不在睡觉提醒窗口（00:30–06:00）');
+      if (!inWakeWindow()) tips.push('现在不在起床提醒窗口（08:00–12:00）');
+      toast(tips.join('；') || '今天已经提醒过了');
+    }
+  }
+
+  function showReminderModal(type, title, desc, okText) {
+    var btns = [
+      {
+        text: okText, primary: true, onClick: function (close) {
+          close();
+        }
+      },
+      {
+        text: '稍后再说', onClick: function (close) {
+          /* 5 分钟后再提醒一次：临时清除标记，避免一天只响一次就漏掉 */
+          setTimeout(function () { checkReminder(true); }, 5 * 60 * 1000);
+          close();
+        }
+      }
+    ];
+    if (type === 'sleep') {
+      btns.splice(1, 0, {
+        text: '加入日历 00:30', onClick: function (close) {
+          downloadIcs([SLEEP_LABEL], 'kaoyan-alarm-sleep');
+          close();
+        }
+      });
+    } else {
+      btns.splice(1, 0, {
+        text: '加入日历 08:00', onClick: function (close) {
+          downloadIcs([WAKE_LABEL], 'kaoyan-alarm-wake');
+          close();
+        }
+      });
+    }
+    showModal({ emoji: type === 'sleep' ? '🌙' : '☀️', title: title, desc: desc, buttons: btns });
+  }
+
+  /* ---------- 浏览器通知 ---------- */
+  function notifyState() {
+    var s = $('notifyState');
+    var btn = $('btnNotify');
+    if (!('Notification' in window)) {
+      s.textContent = '通知权限：当前浏览器不支持 Notification API（不影响使用）';
+      btn.disabled = true;
+      btn.textContent = '浏览器不支持通知';
+      return;
+    }
+    var p = Notification.permission;
+    if (p === 'granted') {
+      s.textContent = '通知权限：已开启（页面打开时才能真正发出）';
+      btn.textContent = '通知已开启';
+      btn.disabled = true;
+    } else if (p === 'denied') {
+      s.textContent = '通知权限：已被拒绝，需到「浏览器设置 → 网站设置 → 通知」里手动允许';
+      btn.textContent = '重新申请通知权限';
+    } else {
+      s.textContent = '通知权限：未申请';
+      btn.textContent = '开启浏览器通知权限';
+    }
+  }
+
+  function requestNotify() {
+    if (!('Notification' in window)) { toast('当前浏览器不支持通知'); return; }
+    try {
+      Notification.requestPermission().then(function (p) {
+        notifyState();
+        if (p === 'granted') toast('通知权限已开启');
+      }).catch(function () { notifyState(); });
+    } catch (e) {
+      /* 老式回调写法兜底 */
+      try { Notification.requestPermission(function () { notifyState(); }); } catch (e2) { notifyState(); }
+    }
+  }
+
+  function sendNotification(title, body) {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    var opts = { body: body, tag: 'kaoyan-reminder', renotify: false, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png' };
+    /* 有 Service Worker 时优先用它（安卓上更稳），否则退回构造函数 */
+    try {
+      if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+        navigator.serviceWorker.ready.then(function (reg) {
+          if (reg && reg.showNotification) reg.showNotification(title, opts);
+          else new Notification(title, opts);
+        }).catch(function () {
+          try { new Notification(title, opts); } catch (e) {}
+        });
+        return;
+      }
+    } catch (e) {}
+    try { new Notification(title, opts); } catch (e) {}
+  }
+
+  /* ---------- .ics 日历文件：生成并下载，导入手机日历做真正的闹钟 ---------- */
+
+  /** 把 Date 转成 ICS 本地时间格式 YYYYMMDDTHHMMSS */
+  function icsLocal(d) {
+    return d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate())
+      + 'T' + pad2(d.getHours()) + pad2(d.getMinutes()) + pad2(d.getSeconds());
+  }
+
+  /**
+   * 生成 ICS 文本。
+   * times: ['00:30'] 或 ['00:30','08:00']
+   * 每一条都是「每天重复」的 15 分钟事件 + 提前 0 分钟的系统提醒（VALARM），
+   * 这样导入系统日历后就是每天固定时间的闹钟。
+   */
+  function buildIcs(times) {
+    var lines = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//kaoyan-assistant//CN',
+      'CALSCALE:GREGORIAN',
+      'METHOD:PUBLISH',
+      'X-WR-CALNAME:考研小助手提醒',
+      'X-WR-TIMEZONE:Asia/Shanghai',
+      /* 自带时区定义，保证任何日历 App 都按北京时间解析 */
+      'BEGIN:VTIMEZONE',
+      'TZID:Asia/Shanghai',
+      'BEGIN:STANDARD',
+      'DTSTART:19700101T000000',
+      'TZOFFSETFROM:+0800',
+      'TZOFFSETTO:+0800',
+      'TZNAME:CST',
+      'END:STANDARD',
+      'END:VTIMEZONE'
+    ];
+
+    var now = new Date();
+    var until = new Date(now.getFullYear() + 3, now.getMonth(), now.getDate());
+    var untilStr = icsLocal(until).slice(0, 8) + 'T000000';   // 重复 3 年后停止
+
+    times.forEach(function (t, idx) {
+      var parts = t.split(':');
+      var hh = parseInt(parts[0], 10), mm = parseInt(parts[1], 10);
+      /* 若今天该时刻已过，则从明天开始，保证「下次一定响」 */
+      var start = new Date();
+      start.setHours(hh, mm, 0, 0);
+      if (start.getTime() <= now.getTime()) start = new Date(start.getTime() + MS_DAY);
+
+      var end = new Date(start.getTime() + 15 * 60000);
+      var isSleep = hh < 12;
+      var title = isSleep ? '该睡觉了（考研小助手）' : '该起床了（考研小助手）';
+
+      lines.push('BEGIN:VEVENT');
+      lines.push('UID:' + Date.now() + '-' + idx + '@kaoyan-assistant');
+      lines.push('DTSTAMP:' + icsLocal(now) + 'Z');
+      lines.push('DTSTART;TZID=Asia/Shanghai:' + icsLocal(start));
+      lines.push('DTEND;TZID=Asia/Shanghai:' + icsLocal(end));
+      lines.push('RRULE:FREQ=DAILY;UNTIL=' + untilStr);
+      lines.push('SUMMARY:' + title);
+      lines.push('DESCRIPTION:由「考研小助手」网页生成。可在日历里修改或删除。');
+      lines.push('BEGIN:VALARM');
+      lines.push('ACTION:DISPLAY');
+      lines.push('TRIGGER:PT0M');          // 事件开始时立刻提醒
+      lines.push('DESCRIPTION:' + title);
+      lines.push('END:VALARM');
+      lines.push('END:VEVENT');
+    });
+
+    lines.push('END:VCALENDAR');
+    /* ICS 规范要求 CRLF 换行 */
+    return lines.join('\r\n') + '\r\n';
+  }
+
+  function downloadIcs(times, baseName) {
+    var text = buildIcs(times);
+    var name = 'kaoyan-alarm-' + times.length + 'x.ics';
+    if (baseName) name = baseName.replace(/[^a-z0-9\-]/gi, '') + '.ics';
+    downloadBlob(new Blob([text], { type: 'text/calendar;charset=utf-8' }), name);
+    toast('日历文件已生成，用手机「日历」App 打开即可导入（' + times.join(' / ') + '）');
+  }
+
+  /* ============================ G. 导出 / 导入 ============================ */
+
+  function downloadBlob(blob, filename) {
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    /* 延迟释放，避免下载被中断 */
+    setTimeout(function () {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 3000);
+  }
+
+  function exportJson() {
+    var payload = {
+      app: 'kaoyan-assistant',
+      schema: 1,
+      exportedAt: new Date().toISOString(),
+      data: data
+    };
+    var text = JSON.stringify(payload, null, 2);
+    downloadBlob(new Blob([text], { type: 'application/json;charset=utf-8' }),
+      'kaoyan-data-' + dateKey() + '.json');
+    toast('已导出 kaoyan-data-' + dateKey() + '.json');
+  }
+
+  function importJson(file) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      var parsed = null;
+      try { parsed = JSON.parse(String(reader.result)); } catch (e) {
+        showModal({ emoji: '⚠️', title: '文件无法解析', desc: '这不是一个有效的 JSON 文件。', buttons: [{ text: '好', primary: true }] });
+        return;
+      }
+      /* 兼容两种格式：{app,data:{...}} 或直接就是数据本体 */
+      var incoming = (parsed && parsed.data && typeof parsed.data === 'object') ? parsed.data : parsed;
+      if (!incoming || typeof incoming !== 'object'
+        || (typeof incoming.tasks !== 'object' && typeof incoming.totals !== 'object')) {
+        showModal({ emoji: '⚠️', title: '数据结构不认识', desc: '文件里没有找到任务或学习时长数据，请选择本应用导出的 JSON。', buttons: [{ text: '好', primary: true }] });
+        return;
+      }
+
+      var taskDays = Object.keys(incoming.tasks || {}).length;
+      var totalDays = Object.keys(incoming.totals || {}).length;
+
+      showModal({
+        emoji: '📥',
+        title: '确认覆盖导入？',
+        desc: '将用文件中的数据覆盖当前全部数据（任务 ' + taskDays + ' 天、学习记录 ' + totalDays
+          + ' 天）。当前数据会被替换，建议先导出备份。',
+        buttons: [
+          {
+            text: '覆盖并刷新', primary: true, onClick: function (close) {
+              /* 用默认结构兜底，再逐字段覆盖，避免脏字段 */
+              var merged = defaultData();
+              merged.createdAt = incoming.createdAt || merged.createdAt;
+              merged.updatedAt = Date.now();
+              merged.tasks = incoming.tasks || {};
+              merged.totals = incoming.totals || {};
+              merged.reminders = incoming.reminders || {};
+              merged.sessions = Array.isArray(incoming.sessions) ? incoming.sessions : [];
+              /* 计时状态也一并恢复（默认按暂停恢复，避免凭空计时） */
+              merged.timer = {
+                running: false,
+                baseSeconds: incoming.timer && isFinite(Number(incoming.timer.baseSeconds))
+                  ? Math.max(0, Math.floor(Number(incoming.timer.baseSeconds))) : 0,
+                startAt: 0
+              };
+              data = merged;
+              saveData();
+              close();
+              toast('导入成功，正在刷新…');
+              setTimeout(function () { location.reload(); }, 700);
+            }
+          },
+          { text: '取消', onClick: function (close) { close(); } }
+        ]
+      });
+    };
+    reader.onerror = function () { toast('读取文件失败'); };
+    reader.readAsText(file, 'utf-8');
+  }
+
+  function renderStorageInfo() {
+    var s = $('storageInfo');
+    var days = Object.keys(data.totals).length;
+    var taskDays = Object.keys(data.tasks).length;
+    var size = 0;
+    try { size = new Blob([JSON.stringify(data)]).size; } catch (e) { size = 0; }
+    s.textContent = '本地数据：任务 ' + taskDays + ' 天 · 学习记录 ' + days + ' 天 · 约 '
+      + (size / 1024).toFixed(1) + ' KB · 计时状态 ' + (data.timer.baseSeconds > 0 ? '有未结束的计时' : '无');
+  }
+
+  /* ============================ H. 弹窗 / Toast / 启动 ============================ */
+
+  function showModal(cfg) {
+    var host = $('modalHost');
+    var mask = el('div', 'mask');
+    var box = el('div', 'modal');
+    var emoji = cfg.emoji || '📌';
+    var title = cfg.title || '';
+    var desc = cfg.desc || '';
+    /* title/desc 里允许用 <br> 换行（内容全部由本程序拼装，不含用户输入） */
+    box.innerHTML =
+      '<div class="emoji"></div><h3></h3><p></p><div class="btns"></div>';
+    box.querySelector('.emoji').textContent = emoji;
+    box.querySelector('h3').textContent = title;
+    box.querySelector('p').innerHTML = desc;
+    var btns = box.querySelector('.btns');
+
+    function close() {
+      if (mask.parentNode) mask.parentNode.removeChild(mask);
+    }
+
+    (cfg.buttons || [{ text: '知道了', primary: true }]).forEach(function (b) {
+      var btn = el('button', (b.primary ? 'grow' : 'grow ghost'), b.text);
+      btn.type = 'button';
+      btn.addEventListener('click', function () {
+        if (typeof b.onClick === 'function') b.onClick(close); else close();
+      });
+      btns.appendChild(btn);
+    });
+
+    mask.appendChild(box);
+    host.appendChild(mask);
+    return close;
+  }
+
+  var toastTimer = null;
+  function toast(msg) {
+    var t = $('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.classList.remove('show'); }, 2200);
+  }
+
+  /* 每日一句：本地数组，不联网 */
+  var QUOTES = [
+    '把今天做完，明天就不会慌。',
+    '效率来自固定动作，不来自情绪。',
+    '背不下去的时候，先做 10 分钟再说。',
+    '不是每天都要热血，但每天都要动手。',
+    '别人在刷手机的时候，你在刷题。',
+    '今天的一小时，就是考场上的一分。',
+    '慢一点没关系，别停。',
+    '睡前复盘 3 分钟，比多熬 1 小时有用。'
+  ];
+
+  function renderQuote() {
+    var idx = Math.floor(Date.now() / MS_DAY) % QUOTES.length;
+    $('quote').textContent = '「' + QUOTES[idx] + '」';
+  }
+
+  /* ---------- 事件绑定 ---------- */
+  function bindEvents() {
+    /* 任务：点击添加 + 回车添加 */
+    $('taskAdd').addEventListener('click', addTask);
+    $('taskInput').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.keyCode === 13) { e.preventDefault(); addTask(); }
+    });
+
+    /* 计时器 */
+    $('btnStart').addEventListener('click', startTimer);
+    $('btnPause').addEventListener('click', pauseTimer);
+    $('btnStop').addEventListener('click', stopTimer);
+
+    /* 日历闹钟 */
+    $('btnIcsSleep').addEventListener('click', function () {
+      downloadIcs([SLEEP_LABEL], 'kaoyan-alarm-sleep');
+    });
+    $('btnIcsWake').addEventListener('click', function () {
+      downloadIcs([WAKE_LABEL], 'kaoyan-alarm-wake');
+    });
+    $('btnExportIcsAll').addEventListener('click', function () {
+      downloadIcs([SLEEP_LABEL, WAKE_LABEL], 'kaoyan-alarm-both');
+    });
+
+    /* 通知 */
+    $('btnNotify').addEventListener('click', requestNotify);
+    $('btnTestNotify').addEventListener('click', function () {
+      if ('Notification' in window && Notification.permission === 'granted') {
+        sendNotification('考研小助手', '通知测试成功，页面打开时就能收到提醒。');
+        toast('已发送测试通知');
+      } else {
+        /* 没权限时直接走页面弹窗，同样能验证提醒逻辑 */
+        checkReminder(true);
+      }
+    });
+
+    /* 数据 */
+    $('btnExport').addEventListener('click', exportJson);
+    $('btnImport').addEventListener('click', function () { $('fileInput').click(); });
+    $('fileInput').addEventListener('change', function (e) {
+      var f = e.target.files && e.target.files[0];
+      e.target.value = '';           // 允许重复选同一个文件
+      if (f) importJson(f);
+    });
+
+    /* 回到前台 / 页面隐藏 */
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    window.addEventListener('pageshow', onVisible);
+
+    /* 离开页面 / 被系统冻结前，立刻把计时时长落盘（记为暂停，避免恢复后重复计时） */
+    window.addEventListener('pagehide', freezeTimer);
+    document.addEventListener('freeze', freezeTimer);
+    window.addEventListener('beforeunload', freezeTimer);
+  }
+
+  /* ---------- 启动 ---------- */
+  function boot() {
+    loadData();
+
+    /* 恢复上次的计时状态：
+     *  - 上次正常暂停 → 接着显示已用时长，按钮是「继续」
+     *  - 上次还在计时中（刷新了页面/App 被切到后台）→ 继续计时，
+     *    baseSeconds + (现在 - startAt) 就是真实已用时长，不会重复计算 */
+    if (data.timer.running && data.timer.startAt) {
+      sessionBase = data.timer.baseSeconds;
+      ticker = setInterval(function () {
+        saveTimerState();
+        renderTimer();
+      }, 1000);
+      setTimeout(function () {
+        toast('已恢复上次的计时，继续累计中（' + fmtHMS(currentElapsed()) + '）');
+      }, 400);
+    } else {
+      data.timer.running = false;
+      data.timer.startAt = 0;
+      sessionBase = data.timer.baseSeconds;
+      if (data.timer.frozenAt && sessionBase > 0) {
+        setTimeout(function () {
+          toast('上次的计时已暂停：' + fmtHMS(sessionBase) + '，点「继续」接着算');
+        }, 400);
+      }
+    }
+
+    bindEvents();
+    renderTasks();
+    renderTimer();
+    renderQuote();
+    renderCountdown();
+    renderStorageInfo();
+    notifyState();
+
+    /* 倒计时每秒刷新；任务/总计只在跨天时重绘 */
+    setInterval(function () {
+      renderCountdown();
+      checkDayRollover();
+    }, 1000);
+
+    /* 打开页面时检查早晚提醒（延迟 600ms，等界面先画出来） */
+    setTimeout(function () { checkReminder(false); }, 600);
+
+    /* 注册 Service Worker：仅 HTTPS / localhost 可用，失败不影响使用 */
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('sw.js').catch(function (err) {
+          /* 常见于 file:// 直接打开或非 HTTPS 环境，属正常现象 */
+          console.warn('Service Worker 注册失败（离线功能不可用）：', err && err.message);
+        });
+      });
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
+})();
+</script>
+</body>
+</html>
